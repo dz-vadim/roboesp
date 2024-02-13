@@ -1,56 +1,66 @@
-#include <Arduino.h>
-#include <WiFi.h>
-#include <WiFiClient.h>
+#define WIFI_SSID "Bogdan_Secret"
+#define WIFI_PASS "kchau2023"
+#define BOT_TOKEN "5217042610:AAGrVfBq1KyYU0uYvJqSI-r0Q9t7bus3xFA"
+#define FIRMWARE_VERSION	0.1
+#define UPDATE_JSON_URL		"https://raw.githubusercontent.com/dz-vadim/roboesp/main/data/versionInfo.json?token=GHSAT0AAAAAACOEIVX3FCORTD7C4SAT2TYIZOKZ6OA"
+#define TIMER_PERIOD 30000  
+
+#include <FastBot.h>
+#include <SPIFFS.h>
 #include <WebServer.h>
-#include <ESPmDNS.h>
-#include <Update.h>
-#include "SPIFFS.h"
-
-const char* host = "esp32";
-const char* ssid = "9_malyi_repet";
-const char* password = "vperova2019";
-
-void initSPIFFS() {
-  if (!SPIFFS.begin(true)) {
-    Serial.println("An error has occurred while mounting SPIFFS");
-  }
-  Serial.println("SPIFFS mounted successfully");
-}
-
+#include <HTTPClient.h>
+#include <Arduino_JSON.h>
 
 WebServer server(80);
+FastBot bot(BOT_TOKEN);
 
-void server_init() {
-    Serial.begin(115200);
-   initSPIFFS();
-  // Connect to WiFi network
-  WiFi.begin(ssid, password);
-  Serial.println("");
+void connectWiFi();
+void setWebface();
+void newMsg(FB_msg& msg);
+void checkNewFirmware();
 
-  // Wait for connection
+int timer_counter = 0;      
+uint32_t timer = 0;   
+
+void setup() {
+  pinMode(2, OUTPUT);   //for check
+  digitalWrite(2, 1);   //for check
+  connectWiFi();
+  Serial.println(WiFi.localIP());
+  bot.attach(newMsg);
+  setWebface();
+}
+
+void loop() {
+  bot.tick();
+  server.handleClient();
+  checkNewFirmware();
+}
+
+void connectWiFi() {
+  delay(2000);
+  Serial.begin(115200);
+  Serial.println();
+
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
+    if (millis() > 15000) ESP.restart();
   }
-  Serial.println("");
-  Serial.print("Connected to ");
-  Serial.println(ssid);
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
+  Serial.println("Connected");
+}
 
-  /*use mdns for host name resolution*/
-  if (!MDNS.begin(host)) { //http://esp32.local
-    Serial.println("Error setting up MDNS responder!");
-    while (1) {
-      delay(1000);
-    }
+void setWebface() {
+  if (!SPIFFS.begin()) {
+    Serial.println("FS Error");
+    return;
   }
-  Serial.println("mDNS responder started");
- 
+
+  server.begin();
   /*return index page which is stored in serverIndex */
   server.on("/", HTTP_GET, []() {
     server.sendHeader("Connection", "close");
-    // server.send(200, "text/html", loginIndex);
      File file = SPIFFS.open("/index.html", "r");
      server.streamFile(file, "text/html");
 
@@ -85,33 +95,64 @@ void server_init() {
       }
     }
   });
-  server.begin();
-}
-void server_runing(){
-  server.handleClient();
-  delay(1);
+  server.onNotFound([]() {
+    File file = SPIFFS.open(server.uri(), "r");
+    if (!file) {
+      server.send(200, "text/plain", "Error");
+      return;
+    }
+    server.streamFile(file, "text/plain");
+    file.close();
+  });
 }
 
-void setup(void) {
-  server_init(); //dont delete this line to save ota update
-  pinMode(2, OUTPUT);
-}
-long del = 0;
-bool ttimer (long d) {
-  if (del - d > millis())
-  {
-    del = millis();
-    return true;
+void newMsg(FB_msg& msg) {
+  Serial.println(msg.toString());
+  if (msg.OTA) {
+    if (msg.fileName.indexOf("mkSPIFFS") > 0 ||
+        msg.fileName.indexOf("spiffs") > 0) {
+      bot.updateFS(); // update spiffs
+    } else {
+      bot.update();   // update firmware
+    }
   }
-  return false;
-  Serial.println(del);
 }
 
-void loop(void) {
-  server_runing(); //dont delete this line to save ota update
-  if (ttimer(1000))
-  digitalWrite(2,1);
-  if (ttimer(1000))
-  digitalWrite(2,0);
-  ttimer(1000);  
+void checkNewFirmware() {
+
+  if (millis() - timer >= TIMER_PERIOD) { 
+    timer = millis(); 
+    timer_counter++;  
+    if (timer_counter > 30) timer_counter = 0;  
+
+    Serial.println("Searching for new firmware...");
+
+    HTTPClient http;
+    http.begin(UPDATE_JSON_URL);
+
+    int httpCode = http.GET();
+    if (httpCode == HTTP_CODE_OK) {
+      JSONVar payload = http.getString();
+      
+      JSONVar version = payload["version"];
+      if (!version) {
+        Serial.println("Unable to find field \"version\" in JSON, aborting...");
+        return;
+      }
+      double new_version = atof(version);
+
+      if (new_version > FIRMWARE_VERSION) {
+        Serial.printf("Current firmware version (%.1f) is older than available one (%.1f), updating...\n", FIRMWARE_VERSION, new_version);
+
+      } else {
+        Serial.printf("Current firmware version (%.1f) is greater than or equal to the available one (%.1f), nothing to do...\n", FIRMWARE_VERSION, new_version);
+      }
+    } else {
+      Serial.println("Failed to download JSON file, aborting...");
+      return;
+    }
+    http.end();
+
+    Serial.println();
+  }
 }
