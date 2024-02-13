@@ -2,7 +2,7 @@
 #define WIFI_PASS "kchau2023"
 #define BOT_TOKEN "5217042610:AAGrVfBq1KyYU0uYvJqSI-r0Q9t7bus3xFA"
 #define FIRMWARE_VERSION	0.1
-#define UPDATE_JSON_URL		"https://raw.githubusercontent.com/dz-vadim/roboesp/main/data/versionInfo.json?token=GHSAT0AAAAAACOEIVX3FCORTD7C4SAT2TYIZOKZ6OA"
+#define UPDATE_JSON_URL "https://raw.githubusercontent.com/dz-vadim/roboesp/main/data/versionInfo.json?token=GHSAT0AAAAAACOB2QIVDXWGCRVKOHXBLQZAZOK4OEQ"
 #define TIMER_PERIOD 30000  
 
 #include <FastBot.h>
@@ -23,8 +23,8 @@ int timer_counter = 0;
 uint32_t timer = 0;   
 
 void setup() {
-  pinMode(2, OUTPUT);   //for check
-  digitalWrite(2, 1);   //for check
+  // pinMode(2, OUTPUT);   //for check
+  // digitalWrite(2, 1);   //for check
   connectWiFi();
   Serial.println(WiFi.localIP());
   bot.attach(newMsg);
